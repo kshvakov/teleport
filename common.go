@@ -34,8 +34,8 @@ type ClientInfo struct {
 }
 
 type ClientStat struct {
-	NumOpenConn int
-	NumIdleConn int
+	NumOpenConns int
+	NumIdleConns int
 }
 
 type Error struct {

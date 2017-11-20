@@ -58,10 +58,12 @@ func (conn *connect) exception() (err error) {
 
 func (conn *connect) release() {
 	conn.client.logf("release connect: %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
-	if atomic.LoadInt32(&conn.closed) == 0 && conn.deadline.After(time.Now()) && len(conn.client.idleConn) < conn.client.maxIdleConn {
-		conn.client.idleConn <- conn
+	if atomic.LoadInt32(&conn.closed) == 0 && conn.deadline.After(time.Now()) && len(conn.client.idleConns) < conn.client.maxIdleConns {
+		conn.client.idleConns <- conn
+	} else {
+		conn.close()
 	}
-	<-conn.client.openConn
+	<-conn.client.openConns
 }
 
 func (conn *connect) close() {

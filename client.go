@@ -18,29 +18,69 @@ var defaultDialer = func(addr string) func() (net.Conn, error) {
 	}
 }
 
-func NewClient(addr string) *Client {
+// Options client
+type Options struct {
+	Dial            func() (net.Conn, error)
+	MaxRetry        int
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnTimeout     time.Duration
+	ConnMaxLifetime time.Duration
+}
+
+const (
+	DefaultMaxRetry     = 2
+	DefaultMaxOpenConns = 50
+	DefaultMaxIdleConns = 25
+	DefaultConnTimeout  = 50 * time.Millisecond
+)
+
+// NewClient init client with options
+func NewClient(addr string, options *Options) *Client {
+	var (
+		dial         = defaultDialer(addr)
+		maxRetry     = DefaultMaxRetry
+		maxOpenConns = DefaultMaxOpenConns
+		maxIdleConns = DefaultMaxIdleConns
+		connTimeout  = DefaultConnTimeout
+	)
+	if options != nil {
+		if options.MaxRetry != 0 {
+			maxRetry = options.MaxRetry
+		}
+		if options.MaxOpenConns != 0 {
+			maxOpenConns = options.MaxOpenConns
+		}
+		if options.ConnTimeout != 0 {
+			connTimeout = options.ConnTimeout
+		}
+		if options.Dial != nil {
+			dial = options.Dial
+		}
+	}
 	return &Client{
-		dial:            defaultDialer(addr),
-		logf:            func(string, ...interface{}) {},
-		idleConn:        make(chan *connect, 350),
-		openConn:        make(chan struct{}, 400),
-		maxRetry:        2,
-		maxIdleConn:     200,
-		openConnTimeout: time.Second,
+		dial:         dial,
+		logf:         func(string, ...interface{}) {},
+		idleConns:    make(chan *connect, maxIdleConns),
+		openConns:    make(chan struct{}, maxOpenConns),
+		maxRetry:     maxRetry,
+		connTimeout:  connTimeout,
+		maxIdleConns: maxIdleConns,
 	}
 }
 
+// Client RPC-client
 type Client struct {
-	logf            func(string, ...interface{})
-	mutex           sync.RWMutex
-	dial            func() (net.Conn, error)
-	version         uint16
-	hostname        string
-	idleConn        chan *connect
-	openConn        chan struct{}
-	openConnTimeout time.Duration
-	maxRetry        int
-	maxIdleConn     int
+	logf         func(string, ...interface{})
+	mutex        sync.RWMutex
+	dial         func() (net.Conn, error)
+	version      uint16
+	hostname     string
+	idleConns    chan *connect
+	openConns    chan struct{}
+	connTimeout  time.Duration
+	maxRetry     int
+	maxIdleConns int
 }
 
 func (client *Client) SetDebug() {
@@ -49,8 +89,8 @@ func (client *Client) SetDebug() {
 
 func (client *Client) Stat() ClientStat {
 	return ClientStat{
-		NumOpenConn: len(client.openConn),
-		NumIdleConn: len(client.idleConn),
+		NumOpenConns: len(client.openConns),
+		NumIdleConns: len(client.idleConns),
 	}
 }
 
@@ -144,13 +184,13 @@ func (client *Client) openOrReuseConn() (*connect, error) {
 	var (
 		attempts int
 		tick     = time.Tick(time.Millisecond)
-		timeout  = time.Tick(client.openConnTimeout)
+		timeout  = time.Tick(client.connTimeout)
 	)
 	for {
 		select {
-		case client.openConn <- struct{}{}:
+		case client.openConns <- struct{}{}:
 			select {
-			case conn := <-client.idleConn:
+			case conn := <-client.idleConns:
 				client.logf("reuse connect: %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
 				return conn, nil
 			default:
@@ -170,10 +210,10 @@ func (client *Client) openOrReuseConn() (*connect, error) {
 					deadline: time.Now().Add(time.Minute),
 				}, nil
 			case attempts >= client.maxRetry:
-				<-client.openConn
+				<-client.openConns
 				return nil, err
 			default:
-				<-client.openConn
+				<-client.openConns
 				attempts++
 			}
 		case <-timeout:

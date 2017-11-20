@@ -18,16 +18,7 @@ func Test_T(t *testing.T) {
 		server.SetDebug()
 		server.Serve(listener)
 	}()
-	client := Client{
-		dial: func() (net.Conn, error) {
-			return net.Dial("tcp", listener.Addr().String())
-		},
-		idleConn:        make(chan *connect, 5),
-		openConn:        make(chan struct{}, 2),
-		maxRetry:        2,
-		maxIdleConn:     10,
-		openConnTimeout: 10 * time.Millisecond,
-	}
+	client := NewClient(listener.Addr().String(), nil)
 	client.SetDebug()
 
 	t.Log(client.Stat())
@@ -61,16 +52,7 @@ func Test_ClientCall(t *testing.T) {
 		})
 		server.Serve(listener)
 	}()
-	client := Client{
-		dial: func() (net.Conn, error) {
-			return net.Dial("tcp", listener.Addr().String())
-		},
-		idleConn:        make(chan *connect, 5),
-		openConn:        make(chan struct{}, 2),
-		maxRetry:        2,
-		maxIdleConn:     10,
-		openConnTimeout: 10 * time.Millisecond,
-	}
+	client := NewClient(listener.Addr().String(), nil)
 	client.SetDebug()
 	var result string
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second))
@@ -92,17 +74,10 @@ func Benchmark_Client(b *testing.B) {
 		})
 		server.Serve(listener)
 	}()
-	client := Client{
-		dial: func() (net.Conn, error) {
-			return net.Dial("tcp", listener.Addr().String())
-		},
-		logf:            func(string, ...interface{}) {},
-		idleConn:        make(chan *connect, 350),
-		openConn:        make(chan struct{}, 400),
-		maxRetry:        2,
-		maxIdleConn:     200,
-		openConnTimeout: time.Second,
-	}
+	client := NewClient(listener.Addr().String(), &Options{
+		MaxOpenConns: 400,
+		MaxIdleConns: 350,
+	})
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -131,17 +106,10 @@ func Benchmark_ClientWithTimeout(b *testing.B) {
 		})
 		server.Serve(listener)
 	}()
-	client := Client{
-		dial: func() (net.Conn, error) {
-			return net.Dial("tcp", listener.Addr().String())
-		},
-		logf:            func(string, ...interface{}) {},
-		idleConn:        make(chan *connect, 350),
-		openConn:        make(chan struct{}, 400),
-		maxRetry:        2,
-		maxIdleConn:     200,
-		openConnTimeout: time.Second,
-	}
+	client := NewClient(listener.Addr().String(), &Options{
+		MaxOpenConns: 400,
+		MaxIdleConns: 350,
+	})
 
 	b.ResetTimer()
 	b.ReportAllocs()

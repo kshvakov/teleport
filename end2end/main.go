@@ -57,7 +57,7 @@ func main() {
 		server.Register(&Service{})
 		server.Serve(listener)
 	}()
-	client := teleport.NewClient(listener.Addr().String())
+	client := teleport.NewClient(listener.Addr().String(), nil)
 
 	for i := 0; i < 58; i++ {
 		go hello(i, client)
