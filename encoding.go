@@ -110,7 +110,7 @@ func (decoder *decoder) uint8() (uint8, error) {
 }
 
 func (decoder *decoder) uint16() (uint16, error) {
-	if _, err := decoder.input.Read(decoder.scratch[:2]); err != nil {
+	if _, err := decoder.Read(decoder.scratch[:2]); err != nil {
 		return 0, err
 	}
 	return uint16(decoder.scratch[0]) | uint16(decoder.scratch[1])<<8, nil
@@ -125,7 +125,7 @@ func (decoder *decoder) int64() (int64, error) {
 }
 
 func (decoder *decoder) uint64() (uint64, error) {
-	if _, err := decoder.input.Read(decoder.scratch[:8]); err != nil {
+	if _, err := decoder.Read(decoder.scratch[:8]); err != nil {
 		return 0, err
 	}
 	return uint64(decoder.scratch[0]) |

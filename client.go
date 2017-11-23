@@ -25,62 +25,77 @@ type Options struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnTimeout     time.Duration
+	ConnDeadline    time.Duration
 	ConnMaxLifetime time.Duration
 }
 
 const (
-	DefaultMaxRetry     = 2
-	DefaultMaxOpenConns = 50
-	DefaultMaxIdleConns = 25
-	DefaultConnTimeout  = 50 * time.Millisecond
+	DefaultMaxRetry        = 2
+	DefaultMaxOpenConns    = 50
+	DefaultMaxIdleConns    = 25
+	DefaultConnTimeout     = 50 * time.Millisecond
+	DefaultConnDeadline    = 5 * time.Second
+	DefaultConnMaxLifetime = time.Hour
 )
 
 // NewClient init client with options
 func NewClient(addr string, options *Options) *Client {
 	var (
-		dial         = defaultDialer(addr)
-		maxRetry     = DefaultMaxRetry
-		maxOpenConns = DefaultMaxOpenConns
-		maxIdleConns = DefaultMaxIdleConns
-		connTimeout  = DefaultConnTimeout
+		dial            = defaultDialer(addr)
+		maxRetry        = DefaultMaxRetry
+		maxOpenConns    = DefaultMaxOpenConns
+		maxIdleConns    = DefaultMaxIdleConns
+		connTimeout     = DefaultConnTimeout
+		connDeadline    = DefaultConnDeadline
+		connMaxLifetime = DefaultConnMaxLifetime
 	)
 	if options != nil {
 		if options.MaxRetry != 0 {
 			maxRetry = options.MaxRetry
 		}
-		if options.MaxOpenConns != 0 {
+		if options.MaxIdleConns != 0 {
 			maxOpenConns = options.MaxOpenConns
+		}
+		if options.MaxOpenConns != 0 {
+			maxIdleConns = options.MaxIdleConns
 		}
 		if options.ConnTimeout != 0 {
 			connTimeout = options.ConnTimeout
+		}
+		if options.ConnDeadline != 0 {
+			connDeadline = options.ConnDeadline
 		}
 		if options.Dial != nil {
 			dial = options.Dial
 		}
 	}
 	return &Client{
-		dial:         dial,
-		logf:         func(string, ...interface{}) {},
-		idleConns:    make(chan *connect, maxIdleConns),
-		openConns:    make(chan struct{}, maxOpenConns),
-		maxRetry:     maxRetry,
-		connTimeout:  connTimeout,
-		maxIdleConns: maxIdleConns,
+		dial:            dial,
+		logf:            func(string, ...interface{}) {},
+		idleConns:       make(chan *connect, maxIdleConns),
+		openConns:       make(chan struct{}, maxOpenConns),
+		maxRetry:        maxRetry,
+		connTimeout:     connTimeout,
+		connDeadline:    connDeadline,
+		connMaxLifetime: connMaxLifetime,
+		maxIdleConns:    maxIdleConns,
 	}
 }
 
 // Client RPC-client
 type Client struct {
-	logf         func(string, ...interface{})
-	mutex        sync.RWMutex
-	dial         func() (net.Conn, error)
-	version      uint16
-	hostname     string
-	idleConns    chan *connect
-	openConns    chan struct{}
-	connTimeout  time.Duration
-	maxRetry     int
-	maxIdleConns int
+	logf            func(string, ...interface{})
+	mutex           sync.RWMutex
+	dial            func() (net.Conn, error)
+	version         uint16
+	hostname        string
+	idleConns       chan *connect
+	openConns       chan struct{}
+	connTimeout     time.Duration
+	connDeadline    time.Duration
+	connMaxLifetime time.Duration
+	maxRetry        int
+	maxIdleConns    int
 }
 
 func (client *Client) SetDebug() {
@@ -207,7 +222,7 @@ func (client *Client) openOrReuseConn() (*connect, error) {
 						input: bufio.NewReader(conn),
 					},
 					client:   client,
-					deadline: time.Now().Add(time.Minute),
+					lifetime: time.Now().Add(client.connMaxLifetime),
 				}, nil
 			case attempts >= client.maxRetry:
 				<-client.openConns
