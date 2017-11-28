@@ -39,6 +39,7 @@ func (session *session) start() error {
 		packet uint8
 	)
 	for {
+		//	session.conn.SetDeadline()
 		if packet, err = session.decoder.uint8(); err != nil {
 			if err == io.EOF {
 				return nil
@@ -139,7 +140,7 @@ func (session *session) call() error {
 
 	session.server.logf("<- call method=%s, args=%#v, deadline=%d", method, args, deadline)
 
-	ctx := newContext(&session.encoder, deadline)
+	ctx := newContext(session, deadline)
 	defer ctx.close()
 	if err := handler.call(ctx, args); err != nil {
 		return session.exception(err)

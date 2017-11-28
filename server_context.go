@@ -2,16 +2,18 @@ package teleport
 
 import (
 	"context"
+	"net"
 	"sync/atomic"
 	"time"
 )
 
 var _ Context = &serverContext{}
 
-func newContext(encoder *encoder, deadline int64) *serverContext {
+func newContext(session *session, deadline int64) *serverContext {
 	ctx := serverContext{
 		err:      context.DeadlineExceeded,
-		encoder:  encoder,
+		conn:     session.conn,
+		encoder:  &session.encoder,
 		deadline: deadline,
 	}
 	if deadline != 0 {
@@ -23,6 +25,7 @@ func newContext(encoder *encoder, deadline int64) *serverContext {
 
 type serverContext struct {
 	err      error
+	conn     net.Conn
 	done     chan struct{}
 	encoder  *encoder
 	deadline int64
@@ -56,15 +59,18 @@ func (ctx *serverContext) WriteResponse(v interface{}) error {
 	return nil
 }
 
+func (ctx *serverContext) SetReadDeadline(t time.Time) error {
+	return ctx.conn.SetReadDeadline(t)
+}
+
+func (ctx *serverContext) SetWriteDeadline(t time.Time) error {
+	return ctx.conn.SetWriteDeadline(t)
+}
+
 func (ctx *serverContext) watch() {
 	select {
 	case <-ctx.done:
-		if atomic.CompareAndSwapInt32(&ctx.closed, 0, 1) {
-			ctx.err = nil
-			if ctx.done != nil {
-				close(ctx.done)
-			}
-		}
+		ctx.close()
 	}
 }
 
