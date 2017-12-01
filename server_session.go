@@ -30,7 +30,6 @@ type session struct {
 }
 
 func (session *session) start() error {
-	defer session.conn.Close()
 	if err := session.handshake(); err != nil {
 		return session.exception(fmt.Errorf("handshake: %v", err))
 	}
@@ -124,7 +123,7 @@ func (session *session) call() error {
 		return err
 	}
 
-	handler, found := session.server.handlers[method]
+	handler, found := session.server.handler(method)
 	if !found {
 		return session.exception(fmt.Errorf("method '%s' not found", method))
 	}

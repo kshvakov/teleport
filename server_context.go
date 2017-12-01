@@ -2,7 +2,6 @@ package teleport
 
 import (
 	"context"
-	"net"
 	"sync/atomic"
 	"time"
 )
@@ -12,8 +11,7 @@ var _ Context = &serverContext{}
 func newContext(session *session, deadline int64) *serverContext {
 	ctx := serverContext{
 		err:      context.DeadlineExceeded,
-		conn:     session.conn,
-		encoder:  &session.encoder,
+		session:  session,
 		deadline: deadline,
 	}
 	if deadline != 0 {
@@ -25,9 +23,8 @@ func newContext(session *session, deadline int64) *serverContext {
 
 type serverContext struct {
 	err      error
-	conn     net.Conn
 	done     chan struct{}
-	encoder  *encoder
+	session  *session
 	deadline int64
 	finished int32
 	closed   int32
@@ -43,7 +40,7 @@ func (ctx *serverContext) Done() <-chan struct{} {
 
 func (ctx *serverContext) Deadline() (deadline time.Time, ok bool) {
 	if ctx.deadline != 0 {
-		return time.Now().Add(time.Duration(ctx.deadline)), true
+		return ctx.session.server.now().Add(time.Duration(ctx.deadline)), true
 	}
 	return time.Time{}, false
 }
@@ -54,17 +51,17 @@ func (ctx *serverContext) Value(key interface{}) interface{} {
 
 func (ctx *serverContext) WriteResponse(v interface{}) error {
 	if atomic.CompareAndSwapInt32(&ctx.finished, 0, 1) {
-		return ctx.encoder.result(v)
+		return ctx.session.encoder.result(v)
 	}
 	return nil
 }
 
 func (ctx *serverContext) SetReadDeadline(t time.Time) error {
-	return ctx.conn.SetReadDeadline(t)
+	return ctx.session.conn.SetReadDeadline(t)
 }
 
 func (ctx *serverContext) SetWriteDeadline(t time.Time) error {
-	return ctx.conn.SetWriteDeadline(t)
+	return ctx.session.conn.SetWriteDeadline(t)
 }
 
 func (ctx *serverContext) watch() {

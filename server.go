@@ -6,22 +6,28 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"sort"
+	"sync/atomic"
+	"time"
 )
 
 func NewServer() *Server {
-	return &Server{
+	server := Server{
 		logf:     func(string, ...interface{}) {},
 		version:  version1,
 		hostname: hostname,
-		handlers: make(map[string]*handler),
+		unixtime: time.Now().Unix(),
 	}
+	go server.ticker()
+	return &server
 }
 
 type Server struct {
 	logf           func(string, ...interface{})
 	version        uint16
 	hostname       string
-	handlers       map[string]*handler
+	handlers       []*handler
+	unixtime       int64
 	healthCheckers []HealthChecker
 }
 
@@ -71,13 +77,14 @@ func (server *Server) Serve(l net.Listener) {
 				if err := sessionStart(server, conn); err != nil {
 					server.logf("handle err: %v", err)
 				}
+				conn.Close()
 			}()
 		}
 	}
 }
 
 func (server *Server) addHandler(name string, v reflect.Value) error {
-	if _, found := server.handlers[name]; found {
+	if _, found := server.handler(name); found {
 		return fmt.Errorf("handler '%s' already exists", name)
 	}
 	var (
@@ -102,9 +109,34 @@ func (server *Server) addHandler(name string, v reflect.Value) error {
 		args = args.Elem()
 	}
 	server.logf("add handler '%s', numOut=%d", name, numOut)
-	server.handlers[name] = &handler{
+	server.handlers = append(server.handlers, &handler{
 		fn:   v,
+		name: name,
 		args: reflect.New(args).Interface().(Args),
-	}
+	})
+	sort.Slice(server.handlers, func(a, b int) bool {
+		return server.handlers[a].name < server.handlers[b].name
+	})
 	return nil
+}
+
+func (server *Server) handler(name string) (*handler, bool) {
+	i := sort.Search(len(server.handlers), func(i int) bool { return server.handlers[i].name >= name })
+	if i < len(server.handlers) && server.handlers[i].name == name {
+		return server.handlers[i], true
+	}
+	return nil, false
+}
+
+func (server *Server) ticker() {
+	for tick := time.Tick(time.Second); ; {
+		select {
+		case <-tick:
+			atomic.AddInt64(&server.unixtime, int64(time.Second))
+		}
+	}
+}
+
+func (server *Server) now() time.Time {
+	return time.Unix(atomic.LoadInt64(&server.unixtime), 0)
 }
